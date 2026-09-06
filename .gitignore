@@ -2,6 +2,10 @@
 .test-sandbox/
 test/.test-config.json
 
+# 运行时产物
+.server-pid
+.server.log
+
 # 临时文件 / 日志
 *.log
 .frame.*

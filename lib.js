@@ -215,6 +215,7 @@ function makeRow(cfg, lock, dirName, dirPath, inMaster, ws) {
     skill: meta.name,
     desc: meta.description,
     repo: repoLabel(cfg, lock, dirName, dirPath, inMaster),
+    url: (lock.url[dirName] || '').replace(/\.git$/, ''),
     inMaster,
     status,
   };

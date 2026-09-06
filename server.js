@@ -6,6 +6,7 @@
 //  用法：node server.js [--config <config.json>] [--port 7741] [--host 127.0.0.1]
 // ============================================================
 const http = require('http');
+const fs = require('fs');
 const path = require('path');
 const lib = require('./lib');
 
@@ -67,6 +68,12 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, snap);
       }
       if (p === '/' || p === '/index.html') {
+        // 托管 Web 桌面 UI（对齐 CC Switch 风格）；没有打包 web 目录时退回接口说明页
+        const webUI = path.join(__dirname, 'web', 'index.html');
+        if (fs.existsSync(webUI)) {
+          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+          return res.end(fs.readFileSync(webUI));
+        }
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
         return res.end(
           '<meta charset="utf-8"><title>Skills 管理端 REST</title><pre>' +
@@ -148,7 +155,25 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+const PID_FILE = path.join(__dirname, '.server-pid');
+server.on('error', err => {
+  if (err.code === 'EADDRINUSE') {
+    // 已有实例在跑（比如重复双击启动）：默认端口可访问就安静退出，否则报错
+    const probe = http.get(`http://127.0.0.1:${PORT}/api/health`, res => {
+      process.exit(res.statusCode === 200 ? 0 : 1);
+    });
+    probe.on('error', () => { console.error(`[skills-manager] 端口 ${PORT} 被其他程序占用`); process.exit(1); });
+  } else {
+    console.error('[skills-manager] ' + (err.stack || err));
+    process.exit(1);
+  }
+});
 server.listen(PORT, HOST, () => {
+  try { fs.writeFileSync(PID_FILE, String(process.pid)); } catch { }
   console.log(`[skills-manager] REST: http://${HOST}:${PORT}   config: ${CONFIG_PATH}`);
   console.log(`[skills-manager] master: ${cfg.masterDir}   platform: ${process.platform}`);
 });
+function cleanupPid() { try { fs.rmSync(PID_FILE, { force: true }); } catch { } }
+process.on('exit', cleanupPid);
+process.on('SIGINT', () => { cleanupPid(); process.exit(0); });
+process.on('SIGTERM', () => { cleanupPid(); process.exit(0); });

@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skills 管理</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --card: #ffffff; --line: #ececf0; --text: #1f2329; --sub: #8a919f;
+    --accent: #4f6ef2; --danger: #e5534b; --ok: #2da44e; --warn: #bf8700;
+    --r: 12px; --shadow: 0 1px 3px rgba(16,24,40,.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.6 "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; padding-bottom: 96px; }
+
+  /* ---------- 顶栏 ---------- */
+  header { position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .hrow { max-width: 1060px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
+  .hrow h1 { font-size: 17px; font-weight: 600; margin-right: 4px; }
+  .spacer { flex: 1; }
+  select, .btn { border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 6px 12px; font-size: 13px; color: var(--text); cursor: pointer; transition: .15s; }
+  .btn:hover { border-color: #cfd4de; background: #f6f7f9; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.danger { color: var(--danger); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .iconbtn { width: 32px; height: 32px; padding: 0; text-align: center; }
+
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 16px 20px; }
+
+  /* ---------- Agent 徽章行 ---------- */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; box-shadow: var(--shadow); }
+  .chip { border: 1.5px solid transparent; border-radius: 999px; padding: 4px 12px; font-size: 12.5px; cursor: pointer; user-select: none; transition: .15s; display: inline-flex; gap: 5px; align-items: center; }
+  .chip b { font-weight: 600; }
+  .chip.active { border-color: currentColor; box-shadow: 0 0 0 2px rgba(79,110,242,.12); }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+  /* ---------- 搜索 + 过滤 ---------- */
+  .filters { display: flex; gap: 10px; margin: 14px 0; align-items: center; }
+  .search { flex: 1; display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 9px 14px; box-shadow: var(--shadow); }
+  .search input { border: 0; outline: 0; flex: 1; font-size: 13.5px; background: transparent; color: var(--text); }
+  .search .magnifier { color: var(--sub); }
+  .pills { display: flex; gap: 6px; }
+  .pill { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 5px 12px; font-size: 12.5px; color: var(--sub); cursor: pointer; }
+  .pill.active { background: var(--text); border-color: var(--text); color: #fff; }
+
+  /* ---------- 分组与卡片 ---------- */
+  .group-title { margin: 18px 2px 8px; font-size: 13px; font-weight: 600; color: #5b6472; display: flex; align-items: center; gap: 7px; cursor: pointer; }
+  .group-title .n { color: var(--sub); font-weight: 400; }
+  .group-title::before { content: "◆"; font-size: 10px; color: #aab2c0; }
+  .cards { display: flex; flex-direction: column; gap: 8px; }
+  .card { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; box-shadow: var(--shadow); transition: .15s; }
+  .card:hover { border-color: #d8dce6; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
+  .card.selected { border-color: var(--accent); background: #fbfcff; }
+  .card .cb { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; flex: none; }
+  .card .main { flex: 1; min-width: 0; }
+  .card .name-row { display: flex; align-items: center; gap: 8px; }
+  .card .name { font-weight: 600; font-size: 14.5px; }
+  .card .repo { font-size: 12px; color: var(--sub); background: #f1f3f6; border-radius: 6px; padding: 1px 8px; }
+  .card .ext { color: #a6adba; font-size: 12px; text-decoration: none; }
+  .card .ext:hover { color: var(--accent); }
+  .card .desc { font-size: 12.5px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .agents { display: flex; gap: 7px; flex: none; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; cursor: pointer; border: 1.5px solid transparent; transition: .12s; color: #fff; }
+  .avatar:hover { transform: scale(1.12); }
+  .avatar.linked { background: var(--c); }
+  .avatar.copied { background: #fff; color: var(--warn); border-color: var(--warn); }
+  .avatar.none { background: #eef0f3; color: #b6bdc9; }
+
+  .empty { text-align: center; color: var(--sub); padding: 60px 0; }
+
+  /* ---------- 底部批量操作栏 ---------- */
+  .actionbar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 20; display: none; align-items: center; gap: 12px; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 10px 16px; box-shadow: 0 6px 24px rgba(16,24,40,.14); }
+  .actionbar.show { display: flex; }
+  .actionbar .label { font-size: 13px; color: var(--sub); }
+  .actionbar .label b { color: var(--text); }
+  .actionbar label.ov { font-size: 12.5px; color: var(--sub); display: flex; gap: 5px; align-items: center; cursor: pointer; }
+
+  /* ---------- Toast ---------- */
+  #toasts { position: fixed; right: 18px; bottom: 18px; z-index: 30; display: flex; flex-direction: column; gap: 8px; }
+  .toast { background: #24292f; color: #fff; border-radius: 10px; padding: 10px 16px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.18); max-width: 460px; animation: pop .18s; }
+  .toast.ok { background: #1f6f37; } .toast.warn { background: #9a6700; } .toast.err { background: #b62324; }
+  @keyframes pop { from { transform: translateY(8px); opacity: 0; } }
+
+  .loading { text-align: center; color: var(--sub); padding: 80px 0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <h1>Skills 管理</h1>
+    <select id="wsSel" title="切换工作空间"></select>
+    <div class="spacer"></div>
+    <button class="btn" id="btnRefresh" title="重新扫描">🔄 刷新</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="chips" id="agentChips"></div>
+
+  <div class="filters">
+    <div class="search"><span class="magnifier">🔍</span>
+      <input id="search" type="text" placeholder="搜索技能的名称、描述或仓库…">
+    </div>
+    <div class="pills">
+      <span class="pill active" data-f="all">全部</span>
+      <span class="pill" data-f="linked">✅ 已链接</span>
+      <span class="pill" data-f="copied">📄 副本</span>
+      <span class="pill" data-f="none">— 未安装</span>
+    </div>
+  </div>
+
+  <div id="list"><div class="loading">加载中…</div></div>
+</div>
+
+<div class="actionbar" id="actionbar">
+  <span class="label">已选 <b id="selN">0</b> 项 · 目标 <b id="tgtName">全部 Agent</b></span>
+  <label class="ov" title="启用时把真实副本替换为链接（删除副本，不可恢复）"><input type="checkbox" id="ovChk"> 覆盖副本(慎用)</label>
+  <button class="btn primary" id="btnEnable">✅ 批量启用</button>
+  <button class="btn danger" id="btnDisable">⛔ 批量禁用</button>
+  <button class="btn" id="btnClear">清空</button>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const AGENT_COLORS = {
+  'ZCode':    { fg: '#4f6ef2', bg: '#eef0fe' },
+  'Claude':   { fg: '#d97706', bg: '#fdf1e3' },
+  'Codex':    { fg: '#059669', bg: '#e6f6ef' },
+  'Grok':     { fg: '#2563eb', bg: '#e8effd' },
+  'OpenCode': { fg: '#7c3aed', bg: '#f1eafd' },
+};
+const FALLBACK = [
+  { fg: '#0f766e', bg: '#e2f4f2' }, { fg: '#b45309', bg: '#fdf1e3' },
+  { fg: '#7c3aed', bg: '#f1eafd' }, { fg: '#be185d', bg: '#fdeaf1' },
+];
+const colorOf = name => AGENT_COLORS[name] || FALLBACK[[...name].reduce((s, c) => s + c.charCodeAt(0), 0) % FALLBACK.length];
+const letterOf = name => ({ ZCode: 'Z', Claude: 'C', Codex: 'X', Grok: 'G', OpenCode: 'O' }[name] || name[0].toUpperCase());
+
+let S = { state: null, sel: new Set(), target: '*', filter: 'all', kw: '' };
+const GLYPH = { linked: '✅ 链接', copied: '📄 副本', none: '— 未安装' };
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { 'content-type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error((json && json.error) || ('HTTP ' + res.status));
+  return json;
+}
+function toast(msg, kind) {
+  const d = document.createElement('div');
+  d.className = 'toast ' + (kind || '');
+  d.textContent = msg;
+  $('#toasts').appendChild(d);
+  setTimeout(() => d.remove(), 4200);
+}
+async function refresh(msg) {
+  try {
+    S.state = await api('GET', '/api/state');
+    const sel = $('#wsSel');
+    sel.innerHTML = S.state.workspaces.map(w => `<option${w.name === S.state.activeWorkspace ? ' selected' : ''}>${w.name}</option>`).join('');
+    render();
+    if (msg) toast(msg, 'ok');
+  } catch (e) { toast('加载失败: ' + e.message, 'err'); }
+}
+
+function agentChip(a, count, active) {
+  const c = colorOf(a.name);
+  return `<span class="chip ${active ? 'active' : ''}" data-agent="${a.name}" style="color:${c.fg};background:${c.bg}" title="点击设为批量操作目标">
+    <span class="dot"></span>${a.name}: <b>${count}</b></span>`;
+}
+function cardHTML(row) {
+  const agents = S.state.agents.map(a => {
+    const st = row.status[a.name] || 'none';
+    const c = colorOf(a.name);
+    const tip = `${a.name}: ${GLYPH[st]}（点击切换启用/禁用）`;
+    return `<span class="avatar ${st}" data-dir="${row.dir}" data-agent="${a.name}" style="--c:${c.fg}" title="${tip}">${letterOf(a.name)}</span>`;
+  }).join('');
+  const ext = row.url ? `<a class="ext" href="${row.url}" target="_blank" title="打开来源仓库">↗</a>` : '';
+  return `<div class="card ${S.sel.has(row.dir) ? 'selected' : ''}" data-dir="${row.dir}">
+    <input type="checkbox" class="cb" data-dir="${row.dir}" ${S.sel.has(row.dir) ? 'checked' : ''}>
+    <div class="main">
+      <div class="name-row"><span class="name">${row.skill}</span>${ext}<span class="repo">${row.repo}</span></div>
+      <div class="desc">${row.desc || ''}</div>
+    </div>
+    <div class="agents">${agents}</div>
+  </div>`;
+}
+function visibleRows() {
+  let rows = S.state.rows;
+  if (S.filter !== 'all') rows = rows.filter(r => Object.values(r.status).includes(S.filter));
+  if (S.kw) {
+    const k = S.kw.toLowerCase();
+    rows = rows.filter(r => (r.skill + ' ' + r.desc + ' ' + r.repo).toLowerCase().includes(k));
+  }
+  return rows;
+}
+function render() {
+  const rows = visibleRows();
+  // Agent 计数徽章（当前空间内各 Agent 已链接数量）
+  const chips = [`<span class="chip ${S.target === '*' ? 'active' : ''}" data-agent="*" style="color:#5b6472;background:#eef0f3">🎯 全部 Agent</span>`]
+    .concat(S.state.agents.map(a => {
+      const n = S.state.rows.filter(r => r.status[a.name] === 'linked').length;
+      return agentChip(a, n, S.target === a.name);
+    })).join('');
+  $('#agentChips').innerHTML = chips;
+
+  // 按仓库分组渲染卡片
+  let html = '', lastRepo = null, count = 0;
+  for (const row of rows) {
+    if (row.repo !== lastRepo) {
+      lastRepo = row.repo;
+      const n = rows.filter(r => r.repo === row.repo).length;
+      if (count) html += '</div>';
+      html += `<div class="group-title" data-repo="${row.repo}">${row.repo} <span class="n">(${n} 个)</span></div><div class="cards" data-g="${row.repo}">`;
+    }
+    html += cardHTML(row);
+    count++;
+  }
+  if (count) html += '</div>';
+  $('#list').innerHTML = count ? html : '<div class="empty">没有匹配的技能</div>';
+
+  $('#selN').textContent = S.sel.size;
+  $('#tgtName').textContent = S.target === '*' ? '全部 Agent' : S.target;
+  $('#actionbar').classList.toggle('show', S.sel.size > 0);
+}
+
+/* ---------- 事件 ---------- */
+$('#search').addEventListener('input', e => { S.kw = e.target.value.trim(); render(); });
+document.querySelectorAll('.pill').forEach(p => p.addEventListener('click', () => {
+  document.querySelectorAll('.pill').forEach(x => x.classList.remove('active'));
+  p.classList.add('active'); S.filter = p.dataset.f; render();
+}));
+$('#agentChips').addEventListener('click', e => {
+  const chip = e.target.closest('.chip'); if (!chip) return;
+  S.target = chip.dataset.agent === '*' ? '*' : chip.dataset.agent;
+  render();
+});
+$('#wsSel').addEventListener('change', async e => {
+  try { await api('POST', '/api/workspace', { name: e.target.value }); await refresh('已切换到空间【' + e.target.value + '】'); }
+  catch (err) { toast(err.message, 'err'); }
+});
+$('#btnRefresh').addEventListener('click', () => refresh('已刷新'));
+
+$('#list').addEventListener('click', async e => {
+  // agent 头像：单击切换该技能在该 Agent 下的启用/禁用
+  const av = e.target.closest('.avatar');
+  if (av) {
+    e.stopPropagation();
+    const dir = av.dataset.dir, agent = av.dataset.agent;
+    const row = S.state.rows.find(r => r.dir === dir);
+    const turnOn = row.status[agent] !== 'linked';
+    try {
+      const c = turnOn
+        ? await api('POST', '/api/enable', { skills: [dir], agent })
+        : await api('POST', '/api/disable', { skills: [dir], agent });
+      const fail = c.fail || 0, conflict = c.conflict || 0, protectedN = c.protected || 0;
+      if (fail) toast(`${dir} @ ${agent}: 失败 ${fail}`, 'err');
+      else if (conflict || protectedN) toast(`${dir} @ ${agent}: 真实副本受保护，未改动（如需覆盖请用批量启用 + 勾选“覆盖副本”）`, 'warn');
+      else toast(`${dir} @ ${agent}: ${turnOn ? '已启用 ✅' : '已禁用 ⛔'}${c.skip ? '（原本就是该状态）' : ''}`, 'ok');
+      await refresh();
+    } catch (err) { toast(err.message, 'err'); }
+    return;
+  }
+  // 组标题：折叠/展开
+  const gt = e.target.closest('.group-title');
+  if (gt) {
+    const g = document.querySelector(`.cards[data-g="${gt.dataset.repo}"]`);
+    if (g) g.style.display = g.style.display === 'none' ? '' : 'none';
+    return;
+  }
+  // 卡片任意处点击 = 勾选
+  const card = e.target.closest('.card');
+  if (card) {
+    const dir = card.dataset.dir;
+    if (S.sel.has(dir)) S.sel.delete(dir); else S.sel.add(dir);
+    render();
+  }
+});
+
+async function batch(kind) {
+  const skills = [...S.sel];
+  if (!skills.length) return toast('请先勾选技能', 'warn');
+  try {
+    const c = await api('POST', '/' + kind, { skills, agent: S.target, overwrite: $('#ovChk').checked });
+    if (kind === 'enable') {
+      toast(`启用完成: 成功 ${c.ok}, 跳过 ${c.skip}, 副本冲突 ${c.conflict}, 仓库无原件 ${c.nomaster}, 失败 ${c.fail}`,
+        c.fail ? 'err' : (c.conflict || c.nomaster) ? 'warn' : 'ok');
+    } else {
+      toast(`禁用完成: 移除链接 ${c.ok}, 跳过 ${c.skip}, 保留真实目录 ${c.protected}, 失败 ${c.fail}`,
+        c.fail ? 'err' : c.protected ? 'warn' : 'ok');
+    }
+    await refresh();
+  } catch (e) { toast(e.message, 'err'); }
+}
+$('#btnEnable').addEventListener('click', () => batch('enable'));
+$('#btnDisable').addEventListener('click', () => batch('disable'));
+$('#btnClear').addEventListener('click', () => { S.sel.clear(); render(); });
+
+refresh();
+</script>
+</body>
+</html>
