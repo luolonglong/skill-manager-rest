@@ -60,7 +60,7 @@ const server = http.createServer(async (req, res) => {
   try { p = new URL(req.url, 'http://localhost').pathname; } catch { return send(res, 400, { error: 'bad url' }); }
   try {
     if (req.method === 'GET') {
-      if (p === '/api/health') return send(res, 200, { ok: true, version: '1.0.0', platform: process.platform });
+      if (p === '/api/health') return send(res, 200, { ok: true, version: '1.2.0', platform: process.platform });
       if (p === '/api/state') {
         const wsName = new URL(req.url, 'http://localhost').searchParams.get('ws');
         const snap = snapshot(wsName || undefined);
@@ -134,6 +134,26 @@ const server = http.createServer(async (req, res) => {
           }
         }
         return send(res, 200, counts);
+      }
+
+      if (p === '/api/update') {
+        const skills = Array.isArray(body.skills) ? body.skills.map(String) : null;
+        if (!skills || skills.length === 0) return send(res, 400, { error: 'skills 必须是非空数组' });
+        const ws = findWs(body.ws);
+        if (!ws) return send(res, 400, { error: '未知工作空间' });
+        const rows = lib.scan(cfg, lock, ws);
+        const results = [];
+        for (const s of skills) {
+          const row = rows.find(r => r.dir === s);
+          if (!row) { results.push({ dir: s, status: 'error', detail: '当前工作空间找不到该技能' }); continue; }
+          if (!row.url) { results.push({ dir: s, status: 'no-source', detail: '没有远程来源（手工安装的技能）' }); continue; }
+          try {
+            results.push({ dir: s, ...(await lib.updateFromGithub(cfg, s, row.url)) });
+          } catch (e) {
+            results.push({ dir: s, status: 'error', detail: e.message || String(e) });
+          }
+        }
+        return send(res, 200, { results });
       }
 
       if (p === '/api/repo') {

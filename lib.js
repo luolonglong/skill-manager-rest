@@ -11,6 +11,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const https = require('https');
+const { execFileSync } = require('child_process');
 
 const IS_WIN = process.platform === 'win32';
 
@@ -248,6 +250,144 @@ function disableSkill(skillDirName, agentDirPath) {
   return removeLink(link) ? 'ok' : 'fail';
 }
 
+// ---------------- 远程更新（GitHub 来源技能 → 拉上游最新替换 master 原件）----------------
+function ghToken() {
+  try {
+    return execFileSync('gh', ['auth', 'token'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch { return ''; }
+}
+function ghJSON(apiPath, token) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      host: 'api.github.com', path: apiPath, method: 'GET',
+      headers: {
+        'user-agent': 'skills-manager',
+        'accept': 'application/vnd.github+json',
+        ...(token ? { authorization: 'Bearer ' + token } : {}),
+      },
+    }, res => {
+      let b = '';
+      res.setEncoding('utf8');
+      res.on('data', c => { b += c; });
+      res.on('end', () => {
+        if (res.statusCode >= 300) return reject(new Error('GitHub API HTTP ' + res.statusCode));
+        try { resolve(JSON.parse(b)); } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(20000, () => req.destroy(new Error('GitHub API 请求超时')));
+    req.end();
+  });
+}
+function ghDownload(url, dest, token) {
+  return new Promise((resolve, reject) => {
+    const get = (u, n) => {
+      const uo = new URL(u);
+      const req = https.request({
+        host: uo.host, path: uo.pathname + uo.search, method: 'GET',
+        headers: {
+          'user-agent': 'skills-manager',
+          ...(token && uo.host === 'api.github.com' ? { authorization: 'Bearer ' + token } : {}),
+        },
+      }, res => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && n < 4) {
+          res.resume();
+          return get(res.headers.location, n + 1);
+        }
+        if (res.statusCode !== 200) { res.resume(); return reject(new Error('下载失败 HTTP ' + res.statusCode)); }
+        const f = fs.createWriteStream(dest);
+        res.pipe(f);
+        f.on('finish', () => f.close(() => resolve(dest)));
+        f.on('error', reject);
+      });
+      req.on('error', reject);
+      req.setTimeout(120000, () => req.destroy(new Error('下载超时')));
+      req.end();
+    };
+    get(url, 0);
+  });
+}
+
+// 在仓库树中定位 dirName 技能所在目录（上游可能用任意层级/改名）：
+// 1) 路径名为 <dirName>/SKILL.md 或以 /<dirName>/SKILL.md 结尾（最浅优先，含仓库根 SKILL.md）
+// 2) frontmatter name == dirName 兜底
+async function locateSkillInRepo(base, dirName, branch, token) {
+  const tree = await ghJSON(`${base}/git/trees/${encodeURIComponent(branch)}?recursive=1`, token);
+  if (tree.truncated) throw new Error('仓库文件树过大，无法枚举（truncated）');
+  const paths = (tree.tree || [])
+    .filter(t => t.type === 'blob' && (t.path === 'SKILL.md' || t.path.endsWith('/SKILL.md')))
+    .map(t => t.path);
+  const byName = paths
+    .filter(p => p === dirName + '/SKILL.md' || p.endsWith('/' + dirName + '/SKILL.md'))
+    .sort((a, b) => a.split('/').length - b.split('/').length);
+  if (byName[0]) return byName[0].slice(0, -'/SKILL.md'.length);
+  for (const p of paths.slice(0, 12)) {
+    try {
+      const enc = p.split('/').map(encodeURIComponent).join('/');
+      const raw = await ghJSON(`${base}/contents/${enc}?ref=${encodeURIComponent(branch)}`, token);
+      const content = Buffer.from(raw.content || '', 'base64').toString('utf8');
+      const nm = /^name:\s*(.+)$/m.exec(content);
+      if (nm && nm[1].trim() === dirName) return p.slice(0, -'/SKILL.md'.length);
+    } catch { /* 单个候选失败继续 */ }
+  }
+  throw new Error(`仓库中未找到技能 ${dirName}（共 ${paths.length} 个 SKILL.md，路径名与 frontmatter 均不匹配）`);
+}
+
+// 把 owner/repo 中 dirName 技能的最新版替换到 master；返回 {status: updated|unsupported|error, detail}
+async function updateFromGithub(cfg, dirName, repoUrl) {
+  const m = /^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+?)(\.git)?\/?$/.exec(repoUrl);
+  if (!m) return { status: 'unsupported', detail: '仅支持 github.com 来源（' + repoUrl + '）' };
+  const owner = m[1], repo = m[2];
+  const token = ghToken();
+  const base = `/repos/${owner}/${repo}`;
+  let branch;
+  try { branch = (await ghJSON(base, token)).default_branch || 'main'; }
+  catch (e) { return { status: 'error', detail: '读取仓库信息失败: ' + e.message }; }
+
+  let skillDir;
+  try { skillDir = await locateSkillInRepo(base, dirName, branch, token); }
+  catch (e) { return { status: 'error', detail: e.message }; }
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'skills-upd-'));
+  try {
+    const tgz = 'repo.tgz';
+    await ghDownload(`https://api.github.com/repos/${owner}/${repo}/tarball/${encodeURIComponent(branch)}`, path.join(tmp, tgz), token);
+    // tar 注意事项：-f 用相对路径（cwd=tmp），GNU tar 会把 "C:\..." 解析成 远程主机:文件；
+    // Windows 优先用系统自带 bsdtar（Git 自带的 GNU tar 在无特权时建 symlink 会失败）
+    let tarBin = 'tar';
+    if (process.platform === 'win32') {
+      const bsdtar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+      if (fs.existsSync(bsdtar)) tarBin = bsdtar;
+    }
+    const listing = execFileSync(tarBin, ['-tzf', tgz], { cwd: tmp, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+    const top = listing.split(/\r?\n/)[0].replace(/\/+$/, '');
+    if (!top) return { status: 'error', detail: '下载的压缩包为空' };
+    // 只解出所需子树，避免仓库里无关 symlink/大文件拖累
+    const members = skillDir ? [top + '/' + skillDir] : [top];
+    execFileSync(tarBin, ['-xzf', tgz, ...members], { cwd: tmp, maxBuffer: 16 * 1024 * 1024 });
+    const src = path.join(tmp, top, skillDir);
+    if (!fs.existsSync(path.join(src, 'SKILL.md'))) return { status: 'error', detail: '下载内容缺少 SKILL.md，放弃替换' };
+
+    // 备份 → 替换 → 失败回滚（Junction 按路径解析，同路径重建后仍有效）
+    const dest = path.join(cfg.masterDir, dirName);
+    const bak = path.join(tmp, 'old');
+    const hadOld = fs.existsSync(dest);
+    if (hadOld) fs.cpSync(dest, bak, { recursive: true });
+    try {
+      if (hadOld) fs.rmSync(dest, { recursive: true, force: true });
+      fs.cpSync(src, dest, { recursive: true });
+    } catch (e) {
+      if (hadOld) {
+        try { fs.rmSync(dest, { recursive: true, force: true }); fs.cpSync(bak, dest, { recursive: true }); } catch { }
+      }
+      throw e;
+    }
+    return { status: 'updated', detail: `${dirName} ← ${owner}/${repo}@${branch}${skillDir ? '/' + skillDir : ''}` };
+  } finally {
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { }
+  }
+}
+
 module.exports = {
   IS_WIN,
   defaultConfig, loadConfig, saveConfig,
@@ -256,4 +396,5 @@ module.exports = {
   linkState, linkTarget, sameReal, createLink, removeLink,
   repoLabel, scan,
   enableSkill, disableSkill,
+  updateFromGithub,
 };

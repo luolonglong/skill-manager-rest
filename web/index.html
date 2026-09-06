@@ -48,6 +48,8 @@
   .group-title { margin: 18px 2px 8px; font-size: 13px; font-weight: 600; color: #5b6472; display: flex; align-items: center; gap: 7px; cursor: pointer; }
   .group-title .n { color: var(--sub); font-weight: 400; }
   .group-title::before { content: "◆"; font-size: 10px; color: #aab2c0; }
+  .gbtn { font-size: 11.5px; font-weight: 400; color: var(--accent); background: #eef1fe; border-radius: 6px; padding: 1px 8px; cursor: pointer; }
+  .gbtn:hover { background: #dfe5fd; }
   .cards { display: flex; flex-direction: column; gap: 8px; }
   .card { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; box-shadow: var(--shadow); transition: .15s; }
   .card:hover { border-color: #d8dce6; box-shadow: 0 2px 8px rgba(16,24,40,.08); }
@@ -59,6 +61,8 @@
   .card .repo { font-size: 12px; color: var(--sub); background: #f1f3f6; border-radius: 6px; padding: 1px 8px; }
   .card .ext { color: #a6adba; font-size: 12px; text-decoration: none; }
   .card .ext:hover { color: var(--accent); }
+  .card .upd { color: #a6adba; font-size: 12px; text-decoration: none; cursor: pointer; }
+  .card .upd:hover { color: var(--accent); }
   .card .desc { font-size: 12.5px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
   .agents { display: flex; gap: 7px; flex: none; }
   .avatar { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; cursor: pointer; border: 1.5px solid transparent; transition: .12s; color: #fff; }
@@ -91,6 +95,8 @@
     <h1>Skills 管理</h1>
     <select id="wsSel" title="切换工作空间"></select>
     <div class="spacer"></div>
+    <button class="btn" id="btnAddWs" title="添加一个项目目录作为独立工作空间">➕ 添加项目</button>
+    <button class="btn" id="btnUpdate" title="把勾选的技能从其 GitHub 来源仓库更新到最新版">⬇️ 更新已选</button>
     <button class="btn" id="btnRefresh" title="重新扫描">🔄 刷新</button>
   </div>
 </header>
@@ -183,10 +189,11 @@ function cardHTML(row) {
     return `<span class="avatar ${st}" data-dir="${row.dir}" data-agent="${a.name}" style="--c:${c.fg}" title="${tip}">${letterOf(a.name)}</span>`;
   }).join('');
   const ext = row.url ? `<a class="ext" href="${row.url}" target="_blank" title="打开来源仓库">↗</a>` : '';
+  const upd = row.url ? `<a class="upd" data-dir="${row.dir}" title="从来源仓库更新此技能到最新版">↻ 更新</a>` : '';
   return `<div class="card ${S.sel.has(row.dir) ? 'selected' : ''}" data-dir="${row.dir}">
     <input type="checkbox" class="cb" data-dir="${row.dir}" ${S.sel.has(row.dir) ? 'checked' : ''}>
     <div class="main">
-      <div class="name-row"><span class="name">${row.skill}</span>${ext}<span class="repo">${row.repo}</span></div>
+      <div class="name-row"><span class="name">${row.skill}</span>${ext}${upd}<span class="repo">${row.repo}</span></div>
       <div class="desc">${row.desc || ''}</div>
     </div>
     <div class="agents">${agents}</div>
@@ -218,7 +225,10 @@ function render() {
       lastRepo = row.repo;
       const n = rows.filter(r => r.repo === row.repo).length;
       if (count) html += '</div>';
-      html += `<div class="group-title" data-repo="${row.repo}">${row.repo} <span class="n">(${n} 个)</span></div><div class="cards" data-g="${row.repo}">`;
+      html += `<div class="group-title" data-repo="${row.repo}">${row.repo} <span class="n">(${n} 个)</span>` +
+        `<span class="gbtn" data-gact="all" data-grepo="${row.repo}" title="勾选本组全部">全选</span>` +
+        `<span class="gbtn" data-gact="invert" data-grepo="${row.repo}" title="本组反选">反选</span></div>` +
+        `<div class="cards" data-g="${row.repo}">`;
     }
     html += cardHTML(row);
     count++;
@@ -248,7 +258,50 @@ $('#wsSel').addEventListener('change', async e => {
 });
 $('#btnRefresh').addEventListener('click', () => refresh('已刷新'));
 
+$('#btnAddWs').addEventListener('click', async () => {
+  const p = prompt('输入要管理 Skills 的项目目录完整路径，例如：K:\\AI\\my-project');
+  if (!p) return;
+  try {
+    const r = await api('POST', '/api/workspaces', { add: { path: p.trim() } });
+    await refresh(r.duplicate ? '该项目已在工作空间列表中' : '已添加项目工作空间【' + r.name + '】');
+  } catch (e) { toast(e.message, 'err'); }
+});
+
+async function batchUpdate(skills) {
+  if (!skills.length) return toast('请先勾选要更新的技能', 'warn');
+  toast('正在从远程更新 ' + skills.length + ' 个技能…');
+  try {
+    const c = await api('POST', '/api/update', { skills });
+    const ok = c.results.filter(r => r.status === 'updated');
+    const nos = c.results.filter(r => r.status === 'no-source');
+    const err = c.results.filter(r => r.status === 'error' || r.status === 'unsupported');
+    if (ok.length) toast('已更新 ' + ok.length + ' 个: ' + ok.map(r => r.dir).join(', '), 'ok');
+    if (nos.length) toast(nos.length + ' 个没有远程来源（手工安装），已跳过: ' + nos.map(r => r.dir).join(', '), 'warn');
+    if (err.length) toast('更新失败 ' + err.length + ' 个: ' + err.map(r => r.dir + '（' + r.detail + '）').join('; '), 'err');
+    if (ok.length) await refresh();
+  } catch (e) { toast(e.message, 'err'); }
+}
+$('#btnUpdate').addEventListener('click', () => batchUpdate([...S.sel]));
+
 $('#list').addEventListener('click', async e => {
+  // 单卡「↻ 更新」：仅这一个技能从远程来源更新
+  const upd = e.target.closest('.upd');
+  if (upd) {
+    e.stopPropagation();
+    await batchUpdate([upd.dataset.dir]);
+    return;
+  }
+  // 分组「全选 / 反选」
+  const gbtn = e.target.closest('.gbtn');
+  if (gbtn) {
+    e.stopPropagation();
+    const repo = gbtn.dataset.grepo;
+    const inGroup = S.state.rows.filter(r => r.repo === repo && visibleRows().includes(r));
+    if (gbtn.dataset.gact === 'all') inGroup.forEach(r => S.sel.add(r.dir));
+    else inGroup.forEach(r => S.sel.has(r.dir) ? S.sel.delete(r.dir) : S.sel.add(r.dir));
+    render();
+    return;
+  }
   // agent 头像：单击切换该技能在该 Agent 下的启用/禁用
   const av = e.target.closest('.avatar');
   if (av) {
@@ -288,7 +341,7 @@ async function batch(kind) {
   const skills = [...S.sel];
   if (!skills.length) return toast('请先勾选技能', 'warn');
   try {
-    const c = await api('POST', '/' + kind, { skills, agent: S.target, overwrite: $('#ovChk').checked });
+    const c = await api('POST', '/api/' + kind, { skills, agent: S.target, overwrite: $('#ovChk').checked });
     if (kind === 'enable') {
       toast(`启用完成: 成功 ${c.ok}, 跳过 ${c.skip}, 副本冲突 ${c.conflict}, 仓库无原件 ${c.nomaster}, 失败 ${c.fail}`,
         c.fail ? 'err' : (c.conflict || c.nomaster) ? 'warn' : 'ok');

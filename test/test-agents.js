@@ -260,6 +260,11 @@ function rmTreeSafe(p) {
     Check('REST: 未知 Agent -> 400', (await req('POST', '/api/enable', { skills: ['tdd'], agent: 'NoSuch' })).status === 400);
     Check('REST: 未知工作空间 -> 400', (await req('POST', '/api/workspace', { name: '不存在' })).status === 400);
     Check('REST: skills 非数组 -> 400', (await req('POST', '/api/enable', { skills: 'tdd' })).status === 400);
+    {
+      const u = await req('POST', '/api/update', { skills: ['tabbit'] });
+      Check('REST: /api/update 无来源技能(tabbit 手工安装) -> no-source（不联网）',
+        u.status === 200 && u.json.results[0].dir === 'tabbit' && u.json.results[0].status === 'no-source');
+    }
 
     // ---------- TUI 冒烟（--once 无头渲染一帧） ----------
     {
