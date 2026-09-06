@@ -1,0 +1,12 @@
+# 测试产物
+.test-sandbox/
+test/.test-config.json
+
+# 临时文件 / 日志
+*.log
+.frame.*
+
+# 系统与编辑器
+node_modules/
+.DS_Store
+Thumbs.db

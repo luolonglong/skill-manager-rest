@@ -1,0 +1,18 @@
+{
+  "masterDir": "C:\\Users\\Administrator\\.agents\\skills",
+  "skillRepoMap": {
+    "ask-matt": "mattpocock/skills"
+  },
+  "agents": [
+    { "name": "ZCode", "folder": ".zcode" },
+    { "name": "Claude", "folder": ".claude" },
+    { "name": "Codex", "folder": ".codex" },
+    { "name": "Grok", "folder": ".grok" },
+    { "name": "OpenCode", "folder": ".opencode" }
+  ],
+  "workspaces": [
+    { "name": "全局（用户级）", "path": "" },
+    { "name": "bb-framework", "path": "K:\\AI\\bb-framework" }
+  ],
+  "activeWorkspace": "全局（用户级）"
+}
